@@ -109,6 +109,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     zone_count = combined_data.get(CONF_DUCTED_ZONE_COUNT, DEFAULT_DUCTED_ZONE_COUNT)
 
     if is_ducted:
+        # Pre-fetch encryption key once for all ducted units to avoid
+        # 8 concurrent UDP bind attempts overwhelming the device
+        if not combined_data.get(CONF_ENCRYPTION_KEY):
+            from .gree_protocol import GetDeviceKey, GetDeviceKeyGCM
+            mac_addr = combined_data.get(CONF_MAC, "").replace(":", "").replace("-", "").lower()
+            ip_addr = combined_data.get(CONF_HOST)
+            port = combined_data.get(CONF_PORT, DEFAULT_PORT)
+            enc_ver = combined_data.get(CONF_ENCRYPTION_VERSION, 1)
+            if enc_ver == 1:
+                key = await GetDeviceKey(mac_addr, ip_addr, port)
+            else:
+                key = await GetDeviceKeyGCM(mac_addr, ip_addr, port)
+            if key:
+                combined_data[CONF_ENCRYPTION_KEY] = key.decode("utf8")
+                _LOGGER.info("Pre-fetched encryption key for ducted multizone")
+            else:
+                _LOGGER.warning("Failed to pre-fetch encryption key, units will retry individually")
+
         # Create main unit (unit 0) + zone units
         devices = []
         for unit_index in range(zone_count + 1):

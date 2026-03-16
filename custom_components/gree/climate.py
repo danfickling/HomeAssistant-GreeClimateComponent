@@ -70,13 +70,13 @@ async def create_gree_device(hass, config, ducted_unit_index=None, ducted_is_mai
     port = config.get(CONF_PORT, DEFAULT_PORT)
     mac_addr = config.get(CONF_MAC).encode().replace(b":", b"")
 
-    # For ducted multizone, use VRF-style MAC format: suffixed_mac@base_mac
-    # This makes _mac_addr = base MAC (for protocol binding/tcid)
-    # and _sub_mac_addr = suffixed MAC (for sub-unit addressing/unique_id)
+    # For ducted multizone, create suffixed MAC for each sub-unit.
+    # The suffixed MAC is used for all protocol communication (mac, sub, tcid)
+    # and as the unique identifier. We store the base MAC separately for device_info.
+    base_mac_for_device_info = None
     if ducted_unit_index is not None:
-        base_mac = mac_addr
-        suffixed_mac = mac_addr + str(ducted_unit_index).zfill(2).encode()
-        mac_addr = suffixed_mac + b"@" + base_mac
+        base_mac_for_device_info = mac_addr
+        mac_addr = mac_addr + str(ducted_unit_index).zfill(2).encode()
         if ducted_is_main:
             name = f"{name} Main"
         else:
@@ -113,6 +113,7 @@ async def create_gree_device(hass, config, ducted_unit_index=None, ducted_is_mai
         uid,
         temp_sensor_offset,
         ducted_is_main=ducted_is_main,
+        base_mac_for_device_info=base_mac_for_device_info,
     )
 
 
@@ -161,6 +162,7 @@ class GreeClimate(ClimateEntity):
         uid=None,
         temp_sensor_offset=None,
         ducted_is_main=None,
+        base_mac_for_device_info=None,
     ):
         _LOGGER.info(f"{name}: Initializing Gree climate device")
 
@@ -169,10 +171,12 @@ class GreeClimate(ClimateEntity):
         self._ip_addr = ip_addr
         self._port = port
         mac_addr_str = mac_addr.decode("utf-8").lower()
-        if "@" in mac_addr_str:
-            self._sub_mac_addr, self._mac_addr = mac_addr_str.split("@", 1)
-        else:
-            self._sub_mac_addr = self._mac_addr = mac_addr_str
+        # For ducted units, mac_addr is already the suffixed MAC (no @ split needed)
+        # _mac_addr is used for all protocol communication
+        # _sub_mac_addr is the same (used for unique_id/device_info)
+        self._mac_addr = mac_addr_str
+        self._sub_mac_addr = mac_addr_str
+        self._base_mac_for_device_info = base_mac_for_device_info.decode("utf-8").lower() if base_mac_for_device_info else None
         self._unique_id = f"{DOMAIN}_{self._sub_mac_addr}"
         self._device_online = None
         self._disable_available_check = disable_available_check
@@ -252,28 +256,49 @@ class GreeClimate(ClimateEntity):
         else:
             self._uid = 0
 
-        self._acOptions = {
-            "Pow": None,
-            "Mod": None,
-            "SetTem": None,
-            "WdSpd": None,
-            "Air": None,
-            "Blo": None,
-            "Health": None,
-            "SwhSlp": None,
-            "Lig": None,
-            "SwingLfRig": None,
-            "SwUpDn": None,
-            "Quiet": None,
-            "Tur": None,
-            "StHt": None,
-            "TemUn": None,
-            "HeatCoolType": None,
-            "TemRec": None,
-            "SvSt": None,
-            "SlpMod": None,
-        }
-        self._optionsToFetch = ["Pow", "Mod", "SetTem", "WdSpd", "Air", "Blo", "Health", "SwhSlp", "Lig", "SwingLfRig", "SwUpDn", "Quiet", "Tur", "StHt", "TemUn", "HeatCoolType", "TemRec", "SvSt", "SlpMod"]
+        # Ducted multizone units use VRF/ducted protocol with different properties
+        if ducted_is_main is not None:
+            self._acOptions = {
+                "Pow": None, "Mod": None, "StTem": None, "WdSpd": None,
+                "Dry": None, "EnSvSt": None, "StFahFlg": None, "ColdMod": None,
+                "HeatSvStTemMax": None, "CoolSvStTemMin": None, "Dred": None,
+                "AppTimer": None, "TemUnit": None, "IndoorType": None,
+                "OMod": None, "LowDeHumi": None, "Quier": None, "RmType": None,
+                "RmNum": None, "VavleAllOn": None, "CSvStTemMinFlg": None,
+                "HSvStTemMaxFlg": None, "AllErr": None, "InProtocol": None,
+                "Demand": None, "IntProVer": None, "MainConProVer": None,
+                "SubConProVer": None,
+            }
+            self._optionsToFetch = [
+                "Pow", "Mod", "StTem", "WdSpd", "Dry", "EnSvSt", "StFahFlg",
+                "ColdMod", "HeatSvStTemMax", "CoolSvStTemMin", "Dred", "AppTimer",
+                "TemUnit", "IndoorType", "OMod", "LowDeHumi", "Quier", "RmType",
+                "RmNum", "VavleAllOn", "CSvStTemMinFlg", "HSvStTemMaxFlg", "AllErr",
+                "InProtocol", "Demand", "IntProVer", "MainConProVer", "SubConProVer",
+            ]
+        else:
+            self._acOptions = {
+                "Pow": None,
+                "Mod": None,
+                "SetTem": None,
+                "WdSpd": None,
+                "Air": None,
+                "Blo": None,
+                "Health": None,
+                "SwhSlp": None,
+                "Lig": None,
+                "SwingLfRig": None,
+                "SwUpDn": None,
+                "Quiet": None,
+                "Tur": None,
+                "StHt": None,
+                "TemUn": None,
+                "HeatCoolType": None,
+                "TemRec": None,
+                "SvSt": None,
+                "SlpMod": None,
+            }
+            self._optionsToFetch = ["Pow", "Mod", "SetTem", "WdSpd", "Air", "Blo", "Health", "SwhSlp", "Lig", "SwingLfRig", "SwUpDn", "Quiet", "Tur", "StHt", "TemUn", "HeatCoolType", "TemRec", "SvSt", "SlpMod"]
 
         # Initialize auto switches
         self._auto_light = False
@@ -286,7 +311,7 @@ class GreeClimate(ClimateEntity):
         self._process_temp_sensor = TempOffsetResolver()
 
     async def GreeGetValues(self, propertyNames):
-        plaintext = '{"cols":' + simplejson.dumps(propertyNames) + ',"mac":"' + str(self._sub_mac_addr) + '","t":"status"}'
+        plaintext = '{"cols":' + simplejson.dumps(propertyNames) + ',"mac":"' + str(self._mac_addr) + '","t":"status"}'
         if self.encryption_version == 1:
             cipher = self.CIPHER
             jsonPayloadToSend = '{"cid":"app","i":0,"pack":"' + base64.b64encode(cipher.encrypt(Pad(plaintext).encode("utf8"))).decode("utf-8") + '","t":"pack","tcid":"' + str(self._mac_addr) + '","uid":{}'.format(self._uid) + "}"
@@ -295,16 +320,21 @@ class GreeClimate(ClimateEntity):
             jsonPayloadToSend = '{"cid":"app","i":0,"pack":"' + pack + '","t":"pack","tcid":"' + str(self._mac_addr) + '","uid":{}'.format(self._uid) + ',"tag" : "' + tag + '"}'
             cipher = GetGCMCipher(self._encryption_key)
         result = await FetchResult(cipher, self._ip_addr, self._port, jsonPayloadToSend, encryption_version=self.encryption_version)
-        return result["dat"][0] if len(result["dat"]) == 1 else result["dat"]
+        # Return values: dat may contain a nested list for single-value queries
+        dat = result.get("dat") or result.get("p")
+        if dat is None:
+            return []
+        return dat[0] if len(dat) == 1 and isinstance(dat[0], list) else dat
 
     def SetAcOptions(self, acOptions, newOptionsToOverride, optionValuesToOverride=None):
         if optionValuesToOverride is not None:
             # Build a list of key-value pairs for a single log line
             settings = []
-            for key in newOptionsToOverride:
-                value = optionValuesToOverride[newOptionsToOverride.index(key)]
-                settings.append(f"{key}={value}")
-                acOptions[key] = value
+            if isinstance(newOptionsToOverride, list) and isinstance(optionValuesToOverride, list):
+                for idx, key in enumerate(newOptionsToOverride):
+                    if idx < len(optionValuesToOverride):
+                        settings.append(f"{key}={optionValuesToOverride[idx]}")
+                        acOptions[key] = optionValuesToOverride[idx]
             _LOGGER.debug(f"{self._name}: Setting device options with retrieved values: {', '.join(settings)}")
         else:
             # Build a list of key-value pairs for a single log line
@@ -316,30 +346,34 @@ class GreeClimate(ClimateEntity):
         return acOptions
 
     async def SendStateToAc(self):
-        opt_list = ["Pow", "Mod", "SetTem", "WdSpd", "Air", "Blo", "Health", "SwhSlp", "Lig", "SwingLfRig", "SwUpDn", "Quiet", "Tur", "StHt", "TemUn", "HeatCoolType", "TemRec", "SvSt", "SlpMod", "AntiDirectBlow", "LigSen"]
-
-        # Collect values from _acOptions
-        p_values = [self._acOptions.get(k) for k in opt_list]
-
-        # Filter out empty ones
         filtered_opt = []
         filtered_p = []
-        for name, val in zip(opt_list, p_values):
-            if val not in ("", None):
-                filtered_opt.append(f'"{name}"')
-                filtered_p.append(str(val))
 
-        buzzer_command_value = 0 if self._beeper_enabled else 1
-        filtered_opt.append('"Buzzer_ON_OFF"')
-        filtered_p.append(str(buzzer_command_value))
+        if self._ducted_is_main is not None:
+            # Ducted VRF: dynamically send all non-None acOptions (like v2.x)
+            for key, value in self._acOptions.items():
+                if value is not None:
+                    filtered_opt.append(f'"{key}"')
+                    filtered_p.append(str(value))
+            if not filtered_opt:
+                return
+        else:
+            # Standard AC: use hardcoded property list
+            opt_list = ["Pow", "Mod", "SetTem", "WdSpd", "Air", "Blo", "Health", "SwhSlp", "Lig", "SwingLfRig", "SwUpDn", "Quiet", "Tur", "StHt", "TemUn", "HeatCoolType", "TemRec", "SvSt", "SlpMod", "AntiDirectBlow", "LigSen"]
+            p_values = [self._acOptions.get(k) for k in opt_list]
+            for name, val in zip(opt_list, p_values):
+                if val not in ("", None):
+                    filtered_opt.append(f'"{name}"')
+                    filtered_p.append(str(val))
 
-        # Newer firmwares use this, not inverted
-        filtered_opt.append('"BuzzerCtrl"')
-        filtered_p.append(str(1 if self._beeper_enabled else 0))
+            buzzer_command_value = 0 if self._beeper_enabled else 1
+            filtered_opt.append('"Buzzer_ON_OFF"')
+            filtered_p.append(str(buzzer_command_value))
+            filtered_opt.append('"BuzzerCtrl"')
+            filtered_p.append(str(1 if self._beeper_enabled else 0))
+            _LOGGER.debug(f"{self._name}: Sending command with beeper {'enabled' if self._beeper_enabled else 'disabled'} (buzzer={buzzer_command_value})")
 
-        _LOGGER.debug(f"{self._name}: Sending command with beeper {'enabled' if self._beeper_enabled else 'disabled'} (buzzer={buzzer_command_value})")
-
-        statePackJson = '{"opt":[' + ",".join(filtered_opt) + '],"p":[' + ",".join(filtered_p) + '],"t":"cmd","sub":"' + self._sub_mac_addr + '"}'
+        statePackJson = '{"opt":[' + ",".join(filtered_opt) + '],"p":[' + ",".join(filtered_p) + '],"t":"cmd","sub":"' + self._mac_addr + '"}'
 
         if self.encryption_version == 1:
             cipher = self.CIPHER
@@ -352,12 +386,19 @@ class GreeClimate(ClimateEntity):
         _LOGGER.debug(f"{self._name}: Command sent successfully: {str(result)}")
 
     def UpdateHATargetTemperature(self):
-        # Sync set temperature to HA. If 8℃ heating is active we set the temp in HA to 8℃ so that it shows the same as the AC display.
+        if self._ducted_is_main is not None:
+            # Ducted VRF: use StTem + MIN_TEMP_C offset (zone units only, main has no temp)
+            if self._ducted_is_main is False and self._acOptions.get("StTem") is not None:
+                self._target_temperature = self._acOptions["StTem"] + MIN_TEMP_C
+                _LOGGER.debug(f"{self._name}: Ducted target temp: StTem={self._acOptions['StTem']} + {MIN_TEMP_C} = {self._target_temperature}")
+            return
+
+        # Standard AC: Sync set temperature to HA
         if self._acOptions["StHt"] and (int(self._acOptions["StHt"]) == 1):
             self._target_temperature = 8
             _LOGGER.debug(f"{self._name}: Target temperature set to 8°C for 8°C heating mode")
         else:
-            temp_c = decode_temp_c(SetTem=self._acOptions["SetTem"], TemRec=self._acOptions["TemRec"])  # takes care of 1/2 degrees
+            temp_c = decode_temp_c(SetTem=self._acOptions["SetTem"], TemRec=self._acOptions["TemRec"])
             temp_f = gree_c_to_f(SetTem=self._acOptions["SetTem"], TemRec=self._acOptions["TemRec"])
 
             if self._unit_of_measurement == "°C":
@@ -365,7 +406,7 @@ class GreeClimate(ClimateEntity):
             elif self._unit_of_measurement == "°F":
                 display_temp = temp_f
             else:
-                display_temp = temp_c  # default to deg c
+                display_temp = temp_c
                 _LOGGER.error(f"{self._name}: Unknown unit of measurement: {self._unit_of_measurement}")
 
             self._target_temperature = display_temp
@@ -374,15 +415,26 @@ class GreeClimate(ClimateEntity):
 
     def UpdateHAHvacMode(self):
         # Sync current HVAC operation mode to HA
-        if self._acOptions["Pow"] == 0:
+        pow_val = self._acOptions.get("Pow")
+        mod_val = self._acOptions.get("Mod")
+        if pow_val is None or pow_val == 0:
             self._hvac_mode = HVACMode.OFF
         else:
-            for key, value in MODES_MAPPING.get("Mod").items():
-                if value == (self._acOptions["Mod"]):
-                    self._hvac_mode = key
+            if self._ducted_is_main is not None:
+                # Ducted VRF: Mod index maps directly to hvac_modes list
+                if mod_val is not None and mod_val < len(self._hvac_modes):
+                    self._hvac_mode = self._hvac_modes[mod_val]
+                else:
+                    self._hvac_mode = HVACMode.OFF
+            else:
+                for key, value in MODES_MAPPING.get("Mod").items():
+                    if value == mod_val:
+                        self._hvac_mode = key
         _LOGGER.debug(f"{self._name}: HVAC mode updated to {self._hvac_mode}")
 
     def UpdateHACurrentSwingMode(self):
+        if self._ducted_is_main is not None:
+            return  # Ducted units have no swing
         # Sync current HVAC Swing mode state to HA
         for key, value in MODES_MAPPING.get("SwUpDn").items():
             if value == (self._acOptions["SwUpDn"]):
@@ -390,6 +442,8 @@ class GreeClimate(ClimateEntity):
         _LOGGER.debug(f"{self._name}: Swing mode updated to {self._swing_mode}")
 
     def UpdateHACurrentSwingHorizontalMode(self):
+        if self._ducted_is_main is not None:
+            return  # Ducted units have no horizontal swing
         # Sync current HVAC Horizontal Swing mode state to HA
         for key, value in MODES_MAPPING.get("SwingLfRig").items():
             if value == (self._acOptions["SwingLfRig"]):
@@ -397,7 +451,25 @@ class GreeClimate(ClimateEntity):
         _LOGGER.debug(f"{self._name}: Horizontal swing mode updated to {self._swing_horizontal_mode}")
 
     def UpdateHAFanMode(self):
-        # Sync current HVAC Fan mode state to HA
+        if self._ducted_is_main is not None:
+            # Ducted VRF: use Quier flag + WdSpd index (main unit only)
+            if self._ducted_is_main is True and self._fan_modes:
+                quier = self._acOptions.get("Quier", 0)
+                wdspd = self._acOptions.get("WdSpd", 0)
+                if quier and int(quier) >= 1:
+                    self._fan_mode = "Quiet" if "Quiet" in self._fan_modes else self._fan_modes[-1]
+                elif wdspd is not None:
+                    idx = int(wdspd)
+                    if 0 <= idx < len(self._fan_modes):
+                        self._fan_mode = self._fan_modes[idx]
+                    else:
+                        self._fan_mode = self._fan_modes[0]
+                else:
+                    self._fan_mode = self._fan_modes[0]
+                _LOGGER.debug(f"{self._name}: Ducted fan mode updated to {self._fan_mode}")
+            return
+
+        # Standard AC fan mode
         if int(self._acOptions["Tur"]) == 1:
             turbo_index = self._fan_modes.index("turbo")
             self._fan_mode = self._fan_modes[turbo_index]
@@ -493,100 +565,111 @@ class GreeClimate(ClimateEntity):
     def UpdateHAStateToCurrentACState(self):
         self.UpdateHATargetTemperature()
         self.UpdateHAHvacMode()
-        self.UpdateHACurrentSwingMode()
-        self.UpdateHACurrentSwingHorizontalMode()
         self.UpdateHAFanMode()
-        self.UpdateHACurrentTemperature()
-        self.UpdateHAOutsideTemperature()
-        self.UpdateHARoomHumidity()
+        if self._ducted_is_main is None:
+            # Standard AC only — ducted has no swing, outside temp, or humidity sensors
+            self.UpdateHACurrentSwingMode()
+            self.UpdateHACurrentSwingHorizontalMode()
+            self.UpdateHACurrentTemperature()
+            self.UpdateHAOutsideTemperature()
+            self.UpdateHARoomHumidity()
 
     async def SyncState(self, acOptions={}):
         # Fetch current settings from HVAC
         _LOGGER.debug(f"{self._name}: Starting device state sync")
 
-        if self._has_temp_sensor is None:
-            _LOGGER.debug("Attempt to check whether device has an built-in temperature sensor")
-            try:
-                temp_sensor = await self.GreeGetValues(["TemSen"])
-            except Exception:
-                _LOGGER.debug("Could not determine whether device has an built-in temperature sensor. Retrying at next update()")
-            else:
-                if temp_sensor:
-                    self._has_temp_sensor = True
-                    self._acOptions.update({"TemSen": None})
-                    self._optionsToFetch.append("TemSen")
-                    _LOGGER.debug("Device has an built-in temperature sensor")
+        # Ducted VRF units don't have these standard AC features — skip probing
+        if self._ducted_is_main is None:
+            if self._has_temp_sensor is None:
+                _LOGGER.debug("Attempt to check whether device has an built-in temperature sensor")
+                try:
+                    temp_sensor = await self.GreeGetValues(["TemSen"])
+                except Exception:
+                    _LOGGER.debug("Could not determine whether device has an built-in temperature sensor. Retrying at next update()")
                 else:
-                    self._has_temp_sensor = False
-                    _LOGGER.debug("Device has no built-in temperature sensor")
+                    if temp_sensor:
+                        self._has_temp_sensor = True
+                        self._acOptions.update({"TemSen": None})
+                        self._optionsToFetch.append("TemSen")
+                        _LOGGER.debug("Device has an built-in temperature sensor")
+                    else:
+                        self._has_temp_sensor = False
+                        _LOGGER.debug("Device has no built-in temperature sensor")
 
-        # Check if device has anti direct blow feature
-        if self._has_anti_direct_blow is None:
-            _LOGGER.debug("Attempt to check whether device has an anti direct blow feature")
-            try:
-                anti_direct_blow = await self.GreeGetValues(["AntiDirectBlow"])
-            except Exception:
-                _LOGGER.debug("Could not determine whether device has an anti direct blow feature. Retrying at next update()")
-            else:
-                if anti_direct_blow:
-                    self._has_anti_direct_blow = True
-                    self._acOptions.update({"AntiDirectBlow": None})
-                    self._optionsToFetch.append("AntiDirectBlow")
-                    _LOGGER.debug("Device has an anti direct blow feature")
+            # Check if device has anti direct blow feature
+            if self._has_anti_direct_blow is None:
+                _LOGGER.debug("Attempt to check whether device has an anti direct blow feature")
+                try:
+                    anti_direct_blow = await self.GreeGetValues(["AntiDirectBlow"])
+                except Exception:
+                    _LOGGER.debug("Could not determine whether device has an anti direct blow feature. Retrying at next update()")
                 else:
-                    self._has_anti_direct_blow = False
-                    _LOGGER.debug("Device has no anti direct blow feature")
+                    if anti_direct_blow:
+                        self._has_anti_direct_blow = True
+                        self._acOptions.update({"AntiDirectBlow": None})
+                        self._optionsToFetch.append("AntiDirectBlow")
+                        _LOGGER.debug("Device has an anti direct blow feature")
+                    else:
+                        self._has_anti_direct_blow = False
+                        _LOGGER.debug("Device has no anti direct blow feature")
 
-        # Check if device has light sensor
-        if self._has_light_sensor is None:
-            _LOGGER.debug("Attempt to check whether device has a built-in light sensor")
-            try:
-                light_sensor = await self.GreeGetValues(["LigSen"])
-            except Exception:
-                _LOGGER.debug("Could not determine whether device has a built-in light sensor. Retrying at next update()")
-            else:
-                if light_sensor:
-                    self._has_light_sensor = True
-                    self._acOptions.update({"LigSen": None})
-                    self._optionsToFetch.append("LigSen")
-                    _LOGGER.debug("Device has a built-in light sensor")
+            # Check if device has light sensor
+            if self._has_light_sensor is None:
+                _LOGGER.debug("Attempt to check whether device has a built-in light sensor")
+                try:
+                    light_sensor = await self.GreeGetValues(["LigSen"])
+                except Exception:
+                    _LOGGER.debug("Could not determine whether device has a built-in light sensor. Retrying at next update()")
                 else:
-                    self._has_light_sensor = False
-                    _LOGGER.debug("Device has no built-in light sensor")
+                    if light_sensor:
+                        self._has_light_sensor = True
+                        self._acOptions.update({"LigSen": None})
+                        self._optionsToFetch.append("LigSen")
+                        _LOGGER.debug("Device has a built-in light sensor")
+                    else:
+                        self._has_light_sensor = False
+                        _LOGGER.debug("Device has no built-in light sensor")
 
-        # Check if device has outside temperature sensor
-        if self._has_outside_temp_sensor is None:
-            _LOGGER.debug("Attempt to check whether device has an outside temperature sensor")
-            try:
-                outside_temp_sensor = await self.GreeGetValues(["OutEnvTem"])
-            except Exception:
-                _LOGGER.debug("Could not determine whether device has an outside temperature sensor. Retrying at next update()")
-            else:
-                if outside_temp_sensor:
-                    self._has_outside_temp_sensor = True
-                    self._acOptions.update({"OutEnvTem": None})
-                    self._optionsToFetch.append("OutEnvTem")
-                    _LOGGER.debug("Device has an outside temperature sensor")
+            # Check if device has outside temperature sensor
+            if self._has_outside_temp_sensor is None:
+                _LOGGER.debug("Attempt to check whether device has an outside temperature sensor")
+                try:
+                    outside_temp_sensor = await self.GreeGetValues(["OutEnvTem"])
+                except Exception:
+                    _LOGGER.debug("Could not determine whether device has an outside temperature sensor. Retrying at next update()")
                 else:
-                    self._has_outside_temp_sensor = False
-                    _LOGGER.debug("Device has no outside temperature sensor")
+                    if outside_temp_sensor:
+                        self._has_outside_temp_sensor = True
+                        self._acOptions.update({"OutEnvTem": None})
+                        self._optionsToFetch.append("OutEnvTem")
+                        _LOGGER.debug("Device has an outside temperature sensor")
+                    else:
+                        self._has_outside_temp_sensor = False
+                        _LOGGER.debug("Device has no outside temperature sensor")
 
-        # Check if device has room humidity sensor
-        if self._has_room_humidity_sensor is None:
-            _LOGGER.debug("Attempt to check whether device has a room humidity sensor")
-            try:
-                humidity_sensor = await self.GreeGetValues(["DwatSen"])
-            except Exception:
-                _LOGGER.debug("Could not determine whether device has a room humidity sensor. Retrying at next update()")
-            else:
-                if humidity_sensor:
-                    self._has_room_humidity_sensor = True
-                    self._acOptions.update({"DwatSen": None})
-                    self._optionsToFetch.append("DwatSen")
-                    _LOGGER.debug("Device has a room humidity sensor")
+            # Check if device has room humidity sensor
+            if self._has_room_humidity_sensor is None:
+                _LOGGER.debug("Attempt to check whether device has a room humidity sensor")
+                try:
+                    humidity_sensor = await self.GreeGetValues(["DwatSen"])
+                except Exception:
+                    _LOGGER.debug("Could not determine whether device has a room humidity sensor. Retrying at next update()")
                 else:
-                    self._has_room_humidity_sensor = False
-                    _LOGGER.debug("Device has no room humidity sensor")
+                    if humidity_sensor:
+                        self._has_room_humidity_sensor = True
+                        self._acOptions.update({"DwatSen": None})
+                        self._optionsToFetch.append("DwatSen")
+                        _LOGGER.debug("Device has a room humidity sensor")
+                    else:
+                        self._has_room_humidity_sensor = False
+                        _LOGGER.debug("Device has no room humidity sensor")
+        else:
+            # Ducted: mark all feature flags as False to skip probing permanently
+            self._has_temp_sensor = self._has_temp_sensor if self._has_temp_sensor is not None else False
+            self._has_anti_direct_blow = False
+            self._has_light_sensor = False
+            self._has_outside_temp_sensor = False
+            self._has_room_humidity_sensor = False
 
         optionsToFetch = self._optionsToFetch
 
@@ -649,7 +732,6 @@ class GreeClimate(ClimateEntity):
 
     async def async_update(self):
         """Retrieve latest state."""
-        _LOGGER.debug("async_update()")
         if not self._encryption_key:
             if self.encryption_version == 1:
                 key = await GetDeviceKey(self._mac_addr, self._ip_addr, self._port)
@@ -846,20 +928,23 @@ class GreeClimate(ClimateEntity):
             return
         target_temperature = kwargs.get(ATTR_TEMPERATURE)
         if target_temperature is not None:
-            # do nothing if temperature is none
-            if not (self._acOptions["Pow"] == 0):
-                # do nothing if HVAC is switched off
-
-                if self._unit_of_measurement == "°C":
-                    SetTem, TemRec = encode_temp_c(T=target_temperature)  # takes care of 1/2 degrees
-                elif self._unit_of_measurement == "°F":
-                    SetTem, TemRec = gree_f_to_c(desired_temp_f=target_temperature)
+            if not (self._acOptions.get("Pow", 0) == 0):
+                if self._ducted_is_main is False:
+                    # Ducted zone: StTem with MIN_TEMP_C offset
+                    ac_temp = int(target_temperature - MIN_TEMP_C)
+                    _LOGGER.debug(f"{self._name}: Ducted set temp: {target_temperature} - {MIN_TEMP_C} = StTem {ac_temp}")
+                    await self.SyncState({"StTem": ac_temp})
                 else:
-                    _LOGGER.error("Unable to set temperature. Units not set to °C or °F")
-                    return
-
-                await self.SyncState({"SetTem": int(SetTem), "TemRec": int(TemRec)})
-                _LOGGER.debug(f"{self._name}: async_set_temperature: Set Temp to {target_temperature}{self._unit_of_measurement} ->  SyncState with SetTem={SetTem}, SyncState with TemRec={TemRec}")
+                    # Standard AC
+                    if self._unit_of_measurement == "°C":
+                        SetTem, TemRec = encode_temp_c(T=target_temperature)
+                    elif self._unit_of_measurement == "°F":
+                        SetTem, TemRec = gree_f_to_c(desired_temp_f=target_temperature)
+                    else:
+                        _LOGGER.error("Unable to set temperature. Units not set to °C or °F")
+                        return
+                    await self.SyncState({"SetTem": int(SetTem), "TemRec": int(TemRec)})
+                    _LOGGER.debug(f"{self._name}: Set Temp to {target_temperature}{self._unit_of_measurement} -> SetTem={SetTem}, TemRec={TemRec}")
 
                 self.async_write_ha_state()
 
@@ -894,22 +979,29 @@ class GreeClimate(ClimateEntity):
         if self._ducted_is_main is False:
             _LOGGER.debug(f"{self._name}: Fan control not available on ducted zone unit")
             return
-        # Set the fan mode.
-        if not (self._acOptions["Pow"] == 0):
+        if not (self._acOptions.get("Pow", 0) == 0):
             try:
-                wd_spd = MODES_MAPPING.get("WdSpd").get(fan)
-
-                # Check if this is turbo mode
-                if fan == "turbo":
-                    _LOGGER.info("Enabling turbo mode")
-                    await self.SyncState({"Tur": 1, "Quiet": 0})
-                # Check if this is quiet mode
-                elif fan == "quiet":
-                    _LOGGER.info("Enabling quiet mode")
-                    await self.SyncState({"Tur": 0, "Quiet": 1})
+                if self._ducted_is_main is True:
+                    # Ducted VRF: Quier flag + WdSpd index
+                    if fan.lower() == 'quiet':
+                        _LOGGER.info(f"{self._name}: Ducted quiet mode")
+                        await self.SyncState({"WdSpd": 0, "Quier": 1})
+                    else:
+                        fan_idx = self._fan_modes.index(fan) if fan in self._fan_modes else 0
+                        _LOGGER.info(f"{self._name}: Ducted fan mode {fan} -> WdSpd={fan_idx}")
+                        await self.SyncState({"WdSpd": fan_idx, "Quier": 0})
                 else:
-                    _LOGGER.info(f"{self._name}: Setting normal fan mode to {wd_spd}")
-                    await self.SyncState({"WdSpd": str(wd_spd), "Tur": 0, "Quiet": 0})
+                    # Standard AC
+                    wd_spd = MODES_MAPPING.get("WdSpd").get(fan)
+                    if fan == "turbo":
+                        _LOGGER.info("Enabling turbo mode")
+                        await self.SyncState({"Tur": 1, "Quiet": 0})
+                    elif fan == "quiet":
+                        _LOGGER.info("Enabling quiet mode")
+                        await self.SyncState({"Tur": 0, "Quiet": 1})
+                    else:
+                        _LOGGER.info(f"{self._name}: Setting normal fan mode to {wd_spd}")
+                        await self.SyncState({"WdSpd": str(wd_spd), "Tur": 0, "Quiet": 0})
 
                 self.async_write_ha_state()
             except ValueError:
@@ -922,25 +1014,33 @@ class GreeClimate(ClimateEntity):
         c = {}
         if hvac_mode == HVACMode.OFF:
             c.update({"Pow": 0})
-            if hasattr(self, "_auto_light") and self._auto_light:
+            if self._ducted_is_main is None and hasattr(self, "_auto_light") and self._auto_light:
                 c.update({"Lig": 0})
         else:
-            mod = MODES_MAPPING.get("Mod").get(hvac_mode)
-            c.update({"Pow": 1, "Mod": mod})
-            if hasattr(self, "_auto_light") and self._auto_light:
-                c.update({"Lig": 1})
-            if hasattr(self, "_auto_xfan") and self._auto_xfan:
-                if (hvac_mode == HVACMode.COOL) or (hvac_mode == HVACMode.DRY):
-                    c.update({"Blo": 1})
+            if self._ducted_is_main is not None:
+                # Ducted VRF: Mod index from hvac_modes list position
+                if hvac_mode in self._hvac_modes:
+                    c.update({"Pow": 1, "Mod": self._hvac_modes.index(hvac_mode)})
+                else:
+                    _LOGGER.error(f"{self._name}: Invalid HVAC mode: {hvac_mode}")
+                    return
+            else:
+                # Standard AC
+                mod = MODES_MAPPING.get("Mod").get(hvac_mode)
+                c.update({"Pow": 1, "Mod": mod})
+                if hasattr(self, "_auto_light") and self._auto_light:
+                    c.update({"Lig": 1})
+                if hasattr(self, "_auto_xfan") and self._auto_xfan:
+                    if (hvac_mode == HVACMode.COOL) or (hvac_mode == HVACMode.DRY):
+                        c.update({"Blo": 1})
         await self.SyncState(c)
         self.async_write_ha_state()
 
     async def async_turn_on(self):
         """Turn on."""
         _LOGGER.info("async_turn_on(): ")
-        # Turn on.
         c = {"Pow": 1}
-        if hasattr(self, "_auto_light") and self._auto_light:
+        if self._ducted_is_main is None and hasattr(self, "_auto_light") and self._auto_light:
             c.update({"Lig": 1})
         await self.SyncState(c)
         self.async_write_ha_state()
@@ -948,16 +1048,17 @@ class GreeClimate(ClimateEntity):
     async def async_turn_off(self):
         """Turn off."""
         _LOGGER.info("async_turn_off(): ")
-        # Turn off.
         c = {"Pow": 0}
-        if hasattr(self, "_auto_light") and self._auto_light:
+        if self._ducted_is_main is None and hasattr(self, "_auto_light") and self._auto_light:
             c.update({"Lig": 0})
         await self.SyncState(c)
         self.async_write_ha_state()
 
     async def async_added_to_hass(self):
-        _LOGGER.info("Gree climate device added to hass()")
-        await self.async_update()
+        try:
+            await self.async_update()
+        except Exception as e:
+            _LOGGER.warning(f"{self._name}: Initial update failed: {e}")
 
     async def async_will_remove_from_hass(self) -> None:
         """Clean up when entity is removed."""
