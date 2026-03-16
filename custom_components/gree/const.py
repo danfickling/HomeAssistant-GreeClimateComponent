@@ -25,7 +25,12 @@ MAX_TEMP_F = 86
 TEMSEN_OFFSET = 40
 
 # HVAC modes - these come from Home Assistant and are standard
-DEFAULT_HVAC_MODES = ["auto", "cool", "dry", "fan_only", "heat", "off"] 
+DEFAULT_HVAC_MODES = ["auto", "cool", "dry", "fan_only", "heat", "off"]
+
+# Ducted VRF units use a different Mod value mapping than standard split ACs:
+# Standard: 0=auto, 1=cool, 2=dry, 3=fan_only, 4=heat
+# Ducted VRF: 0=auto, 1=cool, 2=heat, 3=dry, 4=fan_only
+DUCTED_HVAC_MODES = ["auto", "cool", "heat", "dry", "fan_only", "off"]
 
 DEFAULT_FAN_MODES = ["auto", "low", "medium_low", "medium", "medium_high", "high", "turbo", "quiet"]
 DEFAULT_SWING_MODES = ["default", "swing_full", "fixed_upmost", "fixed_middle_up", "fixed_middle", "fixed_middle_low", "fixed_lowest", "swing_downmost", "swing_middle_low", "swing_middle", "swing_middle_up", "swing_upmost"]

@@ -33,6 +33,7 @@ from .const import (
     DOMAIN,
     DEFAULT_PORT,
     DEFAULT_HVAC_MODES,
+    DUCTED_HVAC_MODES,
     DEFAULT_FAN_MODES,
     DEFAULT_SWING_MODES,
     DEFAULT_SWING_HORIZONTAL_MODES,
@@ -83,7 +84,11 @@ async def create_gree_device(hass, config, ducted_unit_index=None, ducted_is_mai
             name = f"{name} Zone {ducted_unit_index}"
 
     chm = config.get(CONF_HVAC_MODES)
-    hvac_modes = [getattr(HVACMode, mode.upper()) for mode in (chm if chm is not None else DEFAULT_HVAC_MODES)]
+    if ducted_unit_index is not None:
+        # Ducted VRF units use different Mod value mapping than standard ACs
+        hvac_modes = [getattr(HVACMode, mode.upper()) for mode in DUCTED_HVAC_MODES]
+    else:
+        hvac_modes = [getattr(HVACMode, mode.upper()) for mode in (chm if chm is not None else DEFAULT_HVAC_MODES)]
 
     cfm = config.get(CONF_FAN_MODES)
     fan_modes = cfm if cfm is not None else DEFAULT_FAN_MODES
