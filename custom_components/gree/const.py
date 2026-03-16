@@ -33,6 +33,10 @@ DEFAULT_HVAC_MODES = ["auto", "cool", "dry", "fan_only", "heat", "off"]
 DUCTED_HVAC_MODES = ["auto", "cool", "heat", "dry", "fan_only", "off"]
 
 DEFAULT_FAN_MODES = ["auto", "low", "medium_low", "medium", "medium_high", "high", "turbo", "quiet"]
+
+# Ducted VRF fan modes use Title Case with dashes to match v2.x naming
+# (the virtual AC system input_selects use these names)
+DUCTED_FAN_MODES = ["Auto", "Low", "Medium-Low", "Medium", "Medium-High", "High", "Turbo", "Quiet"]
 DEFAULT_SWING_MODES = ["default", "swing_full", "fixed_upmost", "fixed_middle_up", "fixed_middle", "fixed_middle_low", "fixed_lowest", "swing_downmost", "swing_middle_low", "swing_middle", "swing_middle_up", "swing_upmost"]
 DEFAULT_SWING_HORIZONTAL_MODES = ["default", "swing_full", "fixed_leftmost", "fixed_middle_left", "fixed_middle", "fixed_middle_right", "fixed_rightmost"]
 

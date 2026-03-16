@@ -35,6 +35,7 @@ from .const import (
     DEFAULT_HVAC_MODES,
     DUCTED_HVAC_MODES,
     DEFAULT_FAN_MODES,
+    DUCTED_FAN_MODES,
     DEFAULT_SWING_MODES,
     DEFAULT_SWING_HORIZONTAL_MODES,
     DEFAULT_TARGET_TEMP_STEP,
@@ -91,7 +92,10 @@ async def create_gree_device(hass, config, ducted_unit_index=None, ducted_is_mai
         hvac_modes = [getattr(HVACMode, mode.upper()) for mode in (chm if chm is not None else DEFAULT_HVAC_MODES)]
 
     cfm = config.get(CONF_FAN_MODES)
-    fan_modes = cfm if cfm is not None else DEFAULT_FAN_MODES
+    if ducted_unit_index is not None:
+        fan_modes = DUCTED_FAN_MODES
+    else:
+        fan_modes = cfm if cfm is not None else DEFAULT_FAN_MODES
     csm = config.get(CONF_SWING_MODES)
     swing_modes = csm if csm is not None else DEFAULT_SWING_MODES
     cshm = config.get(CONF_SWING_HORIZONTAL_MODES)
