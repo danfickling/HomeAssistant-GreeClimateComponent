@@ -70,9 +70,13 @@ async def create_gree_device(hass, config, ducted_unit_index=None, ducted_is_mai
     port = config.get(CONF_PORT, DEFAULT_PORT)
     mac_addr = config.get(CONF_MAC).encode().replace(b":", b"")
 
-    # For ducted multizone, append unit index suffix to MAC and name
+    # For ducted multizone, use VRF-style MAC format: suffixed_mac@base_mac
+    # This makes _mac_addr = base MAC (for protocol binding/tcid)
+    # and _sub_mac_addr = suffixed MAC (for sub-unit addressing/unique_id)
     if ducted_unit_index is not None:
-        mac_addr = mac_addr + str(ducted_unit_index).zfill(2).encode()
+        base_mac = mac_addr
+        suffixed_mac = mac_addr + str(ducted_unit_index).zfill(2).encode()
+        mac_addr = suffixed_mac + b"@" + base_mac
         if ducted_is_main:
             name = f"{name} Main"
         else:
