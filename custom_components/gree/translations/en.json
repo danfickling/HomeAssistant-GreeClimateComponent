@@ -27,7 +27,9 @@
         "title": "Configure Device",
         "description": "Device connection successful. Enter a name for this device.",
         "data": {
-          "name": "Device Name"
+          "name": "Device Name",
+          "ducted_multizone": "Ducted Multizone",
+          "ducted_zone_count": "Number of Zones"
         }
       },
       "manual": {
@@ -74,7 +76,9 @@
           "swing_modes" : "Vertical Swing Modes",
           "swing_horizontal_modes" : "Horizontal Swing Modes",
           "disable_available_check": "Disable Available Check",
-          "temp_sensor_offset": "Temperature Sensor Offset"
+          "temp_sensor_offset": "Temperature Sensor Offset",
+          "ducted_multizone": "Ducted Multizone",
+          "ducted_zone_count": "Number of Zones"
         }
       }
     }

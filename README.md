@@ -36,6 +36,36 @@ The integration can be added from the Home Assistant UI.
    integration, so new settings take effect immediately without
    restarting Home Assistant.
 
+## Ducted Multizone (VRF) Support
+
+This integration supports ducted multizone (VRF) systems where a single outdoor unit controls multiple indoor zones through a central controller.
+
+### How It Works
+
+When **Ducted Multizone** is enabled during setup, the integration creates multiple climate entities from a single device configuration:
+- **Unit 0 (Main)**: Controls power, HVAC mode, and fan speed. Does not have temperature or swing controls.
+- **Units 1–N (Zones)**: Each zone controls its own target temperature. Does not have fan or swing controls.
+
+All units share the same IP address and encryption key. The integration pre-fetches the encryption key once and reuses it across all zone units.
+
+### Setup
+
+1. Add the integration via **Settings** > **Devices & Services** > **Add Integration** > **Gree Climate**.
+2. Enter the device IP, MAC address, and other details as usual.
+3. Enable **Ducted Multizone** and set the **Number of Zones** (1–8).
+4. The integration will create `zone_count + 1` climate entities (one main unit + one per zone).
+
+These settings can also be changed later via the integration's **Options** dialog.
+
+### Protocol Differences
+
+Ducted VRF units use a different protocol than standard split ACs:
+- **HVAC mode mapping**: `auto`, `cool`, `heat`, `dry`, `fan_only` (different Mod value order than standard units)
+- **Temperature**: Uses `StTem` instead of `SetTem`/`TemRec`
+- **Fan speed**: Uses `WdSpd` index + `Quier` flag instead of the standard turbo/quiet mapping
+- **No swing control**: Ducted systems do not support vertical or horizontal swing
+- **No auxiliary switches**: Standard switches (x-fan, health, lights, etc.) are not created for ducted units
+
 ## Manual Installation
 
 

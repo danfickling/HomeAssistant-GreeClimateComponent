@@ -131,6 +131,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 CONF_ENCRYPTION_VERSION: self._selected_device["encryption_version"],
             }
 
+            # Include ducted settings if provided
+            if user_input.get(CONF_DUCTED_MULTIZONE, False):
+                self._data[CONF_DUCTED_MULTIZONE] = True
+                self._data[CONF_DUCTED_ZONE_COUNT] = user_input.get(CONF_DUCTED_ZONE_COUNT, DEFAULT_DUCTED_ZONE_COUNT)
+
             # Test the connection
             is_connection_valid = await test_connection(self._data)
             if not is_connection_valid:
@@ -139,6 +144,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data_schema=vol.Schema(
                         {
                             vol.Required(CONF_NAME, default=device_name): str,
+                            vol.Optional(CONF_DUCTED_MULTIZONE, default=user_input.get(CONF_DUCTED_MULTIZONE, False)): bool,
+                            vol.Optional(CONF_DUCTED_ZONE_COUNT, default=user_input.get(CONF_DUCTED_ZONE_COUNT, DEFAULT_DUCTED_ZONE_COUNT)): vol.All(int, vol.Range(min=1, max=8)),
                         }
                     ),
                     errors={"base": "cannot_connect"},
@@ -175,6 +182,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         vol.Optional(CONF_ENCRYPTION_KEY, default=self._data.get(CONF_ENCRYPTION_KEY, "")): str,
                         vol.Optional(CONF_UID): int,
                         vol.Optional(CONF_ENCRYPTION_VERSION, default=self._data.get(CONF_ENCRYPTION_VERSION, 1)): int,
+                        vol.Optional(CONF_DUCTED_MULTIZONE, default=False): bool,
+                        vol.Optional(CONF_DUCTED_ZONE_COUNT, default=DEFAULT_DUCTED_ZONE_COUNT): vol.All(int, vol.Range(min=1, max=8)),
                     }
                 ),
                 errors={"base": "cannot_connect"},
@@ -187,6 +196,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         data_schema = vol.Schema(
             {
                 vol.Required(CONF_NAME, default=self._selected_device["name"]): str,
+                vol.Optional(CONF_DUCTED_MULTIZONE, default=False): bool,
+                vol.Optional(CONF_DUCTED_ZONE_COUNT, default=DEFAULT_DUCTED_ZONE_COUNT): vol.All(int, vol.Range(min=1, max=8)),
             }
         )
 
@@ -220,7 +231,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_UID): int,
                 vol.Optional(CONF_ENCRYPTION_VERSION, default=defaults.get(CONF_ENCRYPTION_VERSION, 1)): int,
                 vol.Optional(CONF_DUCTED_MULTIZONE, default=defaults.get(CONF_DUCTED_MULTIZONE, False)): bool,
-                vol.Optional(CONF_DUCTED_ZONE_COUNT, default=defaults.get(CONF_DUCTED_ZONE_COUNT, DEFAULT_DUCTED_ZONE_COUNT)): vol.All(int, vol.Range(min=1, max=7)),
+                vol.Optional(CONF_DUCTED_ZONE_COUNT, default=defaults.get(CONF_DUCTED_ZONE_COUNT, DEFAULT_DUCTED_ZONE_COUNT)): vol.All(int, vol.Range(min=1, max=8)),
             }
         )
         return self.async_show_form(step_id="manual", data_schema=data_schema, errors=errors)
@@ -288,6 +299,14 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     CONF_TEMP_SENSOR_OFFSET,
                     description={"suggested_value": options.get(CONF_TEMP_SENSOR_OFFSET)},
                 ): vol.Any(None, bool),
+                vol.Optional(
+                    CONF_DUCTED_MULTIZONE,
+                    default=options.get(CONF_DUCTED_MULTIZONE, self.config_entry.data.get(CONF_DUCTED_MULTIZONE, False)),
+                ): bool,
+                vol.Optional(
+                    CONF_DUCTED_ZONE_COUNT,
+                    default=options.get(CONF_DUCTED_ZONE_COUNT, self.config_entry.data.get(CONF_DUCTED_ZONE_COUNT, DEFAULT_DUCTED_ZONE_COUNT)),
+                ): vol.All(int, vol.Range(min=1, max=8)),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema)
