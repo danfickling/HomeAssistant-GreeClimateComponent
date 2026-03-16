@@ -40,7 +40,9 @@
           "mac": "MAC Address",
           "encryption_key": "Encryption Key",
           "uid": "UID",
-          "encryption_version": "Encryption Version"
+          "encryption_version": "Encryption Version",
+          "ducted_multizone": "Ducted Multizone",
+          "ducted_zone_count": "Number of Zones"
         }
       }
     },
@@ -57,7 +59,9 @@
       "uid": "UID",
       "encryption_version": "Encryption Version",
       "disable_available_check": "Disable Available Check",
-      "temp_sensor_offset": "Temperature Sensor Offset"
+      "temp_sensor_offset": "Temperature Sensor Offset",
+      "ducted_multizone": "Ducted Multizone",
+      "ducted_zone_count": "Number of Zones"
     }
   },
   "options": {

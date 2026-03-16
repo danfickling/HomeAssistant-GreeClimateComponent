@@ -9,8 +9,11 @@ CONF_SWING_HORIZONTAL_MODES = 'swing_horizontal_modes'
 CONF_ENCRYPTION_VERSION = 'encryption_version'
 CONF_DISABLE_AVAILABLE_CHECK  = 'disable_available_check'
 CONF_TEMP_SENSOR_OFFSET = 'temp_sensor_offset'
+CONF_DUCTED_MULTIZONE = 'ducted_multizone'
+CONF_DUCTED_ZONE_COUNT = 'ducted_zone_count'
 
 DEFAULT_PORT = 7000
+DEFAULT_DUCTED_ZONE_COUNT = 7
 DEFAULT_TARGET_TEMP_STEP = 1
 
 MIN_TEMP_C = 16

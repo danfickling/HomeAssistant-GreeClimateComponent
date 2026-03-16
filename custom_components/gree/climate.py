@@ -63,12 +63,20 @@ _LOGGER = logging.getLogger(__name__)
 SUPPORT_FLAGS = ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.FAN_MODE | ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
 
 
-async def create_gree_device(hass, config):
+async def create_gree_device(hass, config, ducted_unit_index=None, ducted_is_main=None):
     """Create a Gree device instance from config."""
     name = config.get(CONF_NAME, "Gree Climate")
     ip_addr = config.get(CONF_HOST)
     port = config.get(CONF_PORT, DEFAULT_PORT)
     mac_addr = config.get(CONF_MAC).encode().replace(b":", b"")
+
+    # For ducted multizone, append unit index suffix to MAC and name
+    if ducted_unit_index is not None:
+        mac_addr = mac_addr + str(ducted_unit_index).zfill(2).encode()
+        if ducted_is_main:
+            name = f"{name} Main"
+        else:
+            name = f"{name} Zone {ducted_unit_index}"
 
     chm = config.get(CONF_HVAC_MODES)
     hvac_modes = [getattr(HVACMode, mode.upper()) for mode in (chm if chm is not None else DEFAULT_HVAC_MODES)]
@@ -100,6 +108,7 @@ async def create_gree_device(hass, config):
         encryption_key,
         uid,
         temp_sensor_offset,
+        ducted_is_main=ducted_is_main,
     )
 
 
@@ -111,11 +120,15 @@ SCAN_INTERVAL = timedelta(seconds=60)
 
 async def async_setup_entry(hass, entry, async_add_devices):
     """Set up Gree climate from a config entry."""
-    # Get the device that was created in __init__.py
+    # Get the device(s) that were created in __init__.py
     entry_data = hass.data[DOMAIN][entry.entry_id]
-    device = entry_data["device"]
 
-    async_add_devices([device])
+    # Ducted multizone: multiple devices stored in "devices" list
+    if "devices" in entry_data:
+        async_add_devices(entry_data["devices"])
+    else:
+        device = entry_data["device"]
+        async_add_devices([device])
 
 
 async def async_unload_entry(hass, entry):
@@ -143,6 +156,7 @@ class GreeClimate(ClimateEntity):
         encryption_key=None,
         uid=None,
         temp_sensor_offset=None,
+        ducted_is_main=None,
     ):
         _LOGGER.info(f"{name}: Initializing Gree climate device")
 
@@ -159,6 +173,9 @@ class GreeClimate(ClimateEntity):
         self._device_online = None
         self._disable_available_check = disable_available_check
 
+        # Ducted multizone: None = standard unit, True = main/fan unit, False = zone/temp unit
+        self._ducted_is_main = ducted_is_main
+
         self._target_temperature = None
         # Initialize target temperature step with default value (will be overridden by number entity when available)
         self._target_temperature_step = DEFAULT_TARGET_TEMP_STEP
@@ -168,11 +185,24 @@ class GreeClimate(ClimateEntity):
 
         self._hvac_modes = hvac_modes
         self._hvac_mode = HVACMode.OFF
-        self._fan_modes = fan_modes
+
+        # Ducted main unit: has fan control, no swing
+        # Ducted zone units: no fan control, no swing
+        if ducted_is_main is True:
+            self._fan_modes = fan_modes
+            self._swing_modes = None
+            self._swing_horizontal_modes = None
+        elif ducted_is_main is False:
+            self._fan_modes = None
+            self._swing_modes = None
+            self._swing_horizontal_modes = None
+        else:
+            self._fan_modes = fan_modes
+            self._swing_modes = swing_modes
+            self._swing_horizontal_modes = swing_horizontal_modes
+
         self._fan_mode = None
-        self._swing_modes = swing_modes
         self._swing_mode = None
-        self._swing_horizontal_modes = swing_horizontal_modes
         self._swing_horizontal_mode = None
 
         self._temp_sensor_offset = temp_sensor_offset
@@ -741,13 +771,23 @@ class GreeClimate(ClimateEntity):
 
     @property
     def supported_features(self):
+        # Ducted main unit: fan control only, no temperature
+        if self._ducted_is_main is True:
+            sf = ClimateEntityFeature.FAN_MODE | ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
+            _LOGGER.debug(f"{self._name}: supported_features() = {sf} (ducted main)")
+            return sf
+        # Ducted zone unit: temperature only, no fan
+        if self._ducted_is_main is False:
+            sf = ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
+            _LOGGER.debug(f"{self._name}: supported_features() = {sf} (ducted zone)")
+            return sf
+        # Standard unit: all features
         sf = SUPPORT_FLAGS
         if self._swing_modes:
             sf = sf | ClimateEntityFeature.SWING_MODE
         if self._swing_horizontal_modes:
             sf = sf | ClimateEntityFeature.SWING_HORIZONTAL_MODE
         _LOGGER.debug(f"{self._name}: supported_features() = {sf}")
-        # Return the list of supported features.
         return sf
 
     @property
@@ -797,6 +837,9 @@ class GreeClimate(ClimateEntity):
 
     async def async_set_temperature(self, **kwargs):
         """Set new target temperature."""
+        if self._ducted_is_main is True:
+            _LOGGER.debug(f"{self._name}: Temperature control not available on ducted main unit")
+            return
         target_temperature = kwargs.get(ATTR_TEMPERATURE)
         if target_temperature is not None:
             # do nothing if temperature is none
@@ -844,6 +887,9 @@ class GreeClimate(ClimateEntity):
 
     async def async_set_fan_mode(self, fan):
         """Set fan mode."""
+        if self._ducted_is_main is False:
+            _LOGGER.debug(f"{self._name}: Fan control not available on ducted zone unit")
+            return
         # Set the fan mode.
         if not (self._acOptions["Pow"] == 0):
             try:

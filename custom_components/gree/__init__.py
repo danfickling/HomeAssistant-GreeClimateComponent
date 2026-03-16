@@ -24,6 +24,8 @@ from homeassistant.helpers.typing import ConfigType
 # Local imports
 from .const import (
     CONF_DISABLE_AVAILABLE_CHECK,
+    CONF_DUCTED_MULTIZONE,
+    CONF_DUCTED_ZONE_COUNT,
     CONF_ENCRYPTION_KEY,
     CONF_ENCRYPTION_VERSION,
     CONF_FAN_MODES,
@@ -32,6 +34,7 @@ from .const import (
     CONF_SWING_MODES,
     CONF_TEMP_SENSOR_OFFSET,
     CONF_UID,
+    DEFAULT_DUCTED_ZONE_COUNT,
     DEFAULT_FAN_MODES,
     DEFAULT_HVAC_MODES,
     DEFAULT_PORT,
@@ -102,13 +105,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Create the Gree device instance here and store it
     from .climate import create_gree_device
 
-    device = await create_gree_device(hass, combined_data)
+    is_ducted = combined_data.get(CONF_DUCTED_MULTIZONE, False)
+    zone_count = combined_data.get(CONF_DUCTED_ZONE_COUNT, DEFAULT_DUCTED_ZONE_COUNT)
 
-    # Store both the config data and the device instance
-    hass.data[DOMAIN][entry.entry_id] = {
-        "config": combined_data,
-        "device": device,
-    }
+    if is_ducted:
+        # Create main unit (unit 0) + zone units
+        devices = []
+        for unit_index in range(zone_count + 1):
+            is_main = (unit_index == 0)
+            device = await create_gree_device(
+                hass, combined_data,
+                ducted_unit_index=unit_index,
+                ducted_is_main=is_main,
+            )
+            devices.append(device)
+        # Store both the config data and the device instances
+        hass.data[DOMAIN][entry.entry_id] = {
+            "config": combined_data,
+            "device": devices[0],  # Main device for entity platforms
+            "devices": devices,    # All devices for climate platform
+        }
+    else:
+        device = await create_gree_device(hass, combined_data)
+        # Store both the config data and the device instance
+        hass.data[DOMAIN][entry.entry_id] = {
+            "config": combined_data,
+            "device": device,
+        }
 
     _LOGGER.debug("Setting up config entry %s with data: %s", entry.entry_id, combined_data)
     entry.async_on_unload(entry.add_update_listener(_update_listener))

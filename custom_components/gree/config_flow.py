@@ -23,6 +23,8 @@ from homeassistant.helpers import selector
 # Local imports
 from .const import (
     CONF_DISABLE_AVAILABLE_CHECK,
+    CONF_DUCTED_MULTIZONE,
+    CONF_DUCTED_ZONE_COUNT,
     CONF_ENCRYPTION_KEY,
     CONF_ENCRYPTION_VERSION,
     CONF_FAN_MODES,
@@ -31,6 +33,7 @@ from .const import (
     CONF_SWING_MODES,
     CONF_TEMP_SENSOR_OFFSET,
     CONF_UID,
+    DEFAULT_DUCTED_ZONE_COUNT,
     DEFAULT_FAN_MODES,
     DEFAULT_HVAC_MODES,
     DEFAULT_PORT,
@@ -216,6 +219,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_ENCRYPTION_KEY, default=defaults.get(CONF_ENCRYPTION_KEY, "")): str,
                 vol.Optional(CONF_UID): int,
                 vol.Optional(CONF_ENCRYPTION_VERSION, default=defaults.get(CONF_ENCRYPTION_VERSION, 1)): int,
+                vol.Optional(CONF_DUCTED_MULTIZONE, default=defaults.get(CONF_DUCTED_MULTIZONE, False)): bool,
+                vol.Optional(CONF_DUCTED_ZONE_COUNT, default=defaults.get(CONF_DUCTED_ZONE_COUNT, DEFAULT_DUCTED_ZONE_COUNT)): vol.All(int, vol.Range(min=1, max=7)),
             }
         )
         return self.async_show_form(step_id="manual", data_schema=data_schema, errors=errors)
