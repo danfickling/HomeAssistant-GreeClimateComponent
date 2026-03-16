@@ -64,11 +64,13 @@ class GreeEntity(Entity):
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
+        # Use base MAC for connections if available (ducted units have suffixed MACs)
+        connection_mac = getattr(self._device, '_base_mac_for_device_info', None) or self._device._mac_addr
         return DeviceInfo(
             identifiers={(DOMAIN, self._device._sub_mac_addr)},
             name=self._device._name,
             manufacturer="Gree",
-            connections={(CONNECTION_NETWORK_MAC, self._device._mac_addr)},
+            connections={(CONNECTION_NETWORK_MAC, connection_mac)},
         )
 
     @property

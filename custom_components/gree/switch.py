@@ -182,6 +182,11 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Gree switch based on a config entry."""
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+    device = entry_data.get("device")
+    # Ducted multizone units use VRF protocol without standard switch properties
+    if device and getattr(device, "_ducted_is_main", None) is not None:
+        return
     async_add_entities(GreeSwitchEntity(hass, entry, description) for description in SWITCHES)
 
 

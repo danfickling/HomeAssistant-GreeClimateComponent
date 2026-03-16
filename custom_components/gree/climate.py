@@ -26,7 +26,7 @@ from homeassistant.const import (
     CONF_NAME,
     CONF_PORT,
 )
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.device_registry import CONNECTION_NETWORK_MAC, DeviceInfo
 
 # Local imports
 from .const import (
@@ -173,12 +173,24 @@ class GreeClimate(ClimateEntity):
         self._ip_addr = ip_addr
         self._port = port
         mac_addr_str = mac_addr.decode("utf-8").lower()
-        # For ducted units, mac_addr is already the suffixed MAC (no @ split needed)
-        # _mac_addr is used for all protocol communication
-        # _sub_mac_addr is the same (used for unique_id/device_info)
-        self._mac_addr = mac_addr_str
-        self._sub_mac_addr = mac_addr_str
-        self._base_mac_for_device_info = base_mac_for_device_info.decode("utf-8").lower() if base_mac_for_device_info else None
+
+        if ducted_is_main is not None:
+            # Ducted units: mac_addr is already the suffixed MAC
+            # _mac_addr is used for protocol communication (sub/tcid fields)
+            # _sub_mac_addr is the device identifier (unique_id/device_info)
+            self._mac_addr = mac_addr_str
+            self._sub_mac_addr = mac_addr_str
+            self._base_mac_for_device_info = base_mac_for_device_info.decode("utf-8").lower() if base_mac_for_device_info else None
+        else:
+            # Standard AC: support optional sub@main MAC format
+            # _sub_mac_addr is used in protocol status/command (mac/sub fields)
+            # _mac_addr is used for protocol tcid field
+            if "@" in mac_addr_str:
+                self._sub_mac_addr, self._mac_addr = mac_addr_str.split("@", 1)
+            else:
+                self._sub_mac_addr = self._mac_addr = mac_addr_str
+            self._base_mac_for_device_info = None
+
         self._unique_id = f"{DOMAIN}_{self._sub_mac_addr}"
         self._device_online = None
         self._disable_available_check = disable_available_check
@@ -313,7 +325,7 @@ class GreeClimate(ClimateEntity):
         self._process_temp_sensor = TempOffsetResolver()
 
     async def GreeGetValues(self, propertyNames):
-        plaintext = '{"cols":' + simplejson.dumps(propertyNames) + ',"mac":"' + str(self._mac_addr) + '","t":"status"}'
+        plaintext = '{"cols":' + simplejson.dumps(propertyNames) + ',"mac":"' + str(self._sub_mac_addr) + '","t":"status"}'
         if self.encryption_version == 1:
             cipher = self.CIPHER
             jsonPayloadToSend = '{"cid":"app","i":0,"pack":"' + base64.b64encode(cipher.encrypt(Pad(plaintext).encode("utf8"))).decode("utf-8") + '","t":"pack","tcid":"' + str(self._mac_addr) + '","uid":{}'.format(self._uid) + "}"
@@ -322,11 +334,15 @@ class GreeClimate(ClimateEntity):
             jsonPayloadToSend = '{"cid":"app","i":0,"pack":"' + pack + '","t":"pack","tcid":"' + str(self._mac_addr) + '","uid":{}'.format(self._uid) + ',"tag" : "' + tag + '"}'
             cipher = GetGCMCipher(self._encryption_key)
         result = await FetchResult(cipher, self._ip_addr, self._port, jsonPayloadToSend, encryption_version=self.encryption_version)
-        # Return values: dat may contain a nested list for single-value queries
-        dat = result.get("dat") or result.get("p")
-        if dat is None:
-            return []
-        return dat[0] if len(dat) == 1 and isinstance(dat[0], list) else dat
+        if self._ducted_is_main is not None:
+            # Ducted VRF: response may use "p" instead of "dat"
+            dat = result.get("dat") or result.get("p")
+            if dat is None:
+                return []
+            return dat[0] if len(dat) == 1 and isinstance(dat[0], list) else dat
+        else:
+            # Standard AC: upstream return logic
+            return result["dat"][0] if len(result["dat"]) == 1 else result["dat"]
 
     def SetAcOptions(self, acOptions, newOptionsToOverride, optionValuesToOverride=None):
         if optionValuesToOverride is not None:
@@ -375,7 +391,7 @@ class GreeClimate(ClimateEntity):
             filtered_p.append(str(1 if self._beeper_enabled else 0))
             _LOGGER.debug(f"{self._name}: Sending command with beeper {'enabled' if self._beeper_enabled else 'disabled'} (buzzer={buzzer_command_value})")
 
-        statePackJson = '{"opt":[' + ",".join(filtered_opt) + '],"p":[' + ",".join(filtered_p) + '],"t":"cmd","sub":"' + self._mac_addr + '"}'
+        statePackJson = '{"opt":[' + ",".join(filtered_opt) + '],"p":[' + ",".join(filtered_p) + '],"t":"cmd","sub":"' + self._sub_mac_addr + '"}'
 
         if self.encryption_version == 1:
             cipher = self.CIPHER
@@ -861,21 +877,16 @@ class GreeClimate(ClimateEntity):
     def supported_features(self):
         # Ducted main unit: fan control only, no temperature
         if self._ducted_is_main is True:
-            sf = ClimateEntityFeature.FAN_MODE | ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
-            _LOGGER.debug(f"{self._name}: supported_features() = {sf} (ducted main)")
-            return sf
+            return ClimateEntityFeature.FAN_MODE | ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
         # Ducted zone unit: temperature only, no fan
         if self._ducted_is_main is False:
-            sf = ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
-            _LOGGER.debug(f"{self._name}: supported_features() = {sf} (ducted zone)")
-            return sf
+            return ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
         # Standard unit: all features
         sf = SUPPORT_FLAGS
         if self._swing_modes:
             sf = sf | ClimateEntityFeature.SWING_MODE
         if self._swing_horizontal_modes:
             sf = sf | ClimateEntityFeature.SWING_HORIZONTAL_MODE
-        _LOGGER.debug(f"{self._name}: supported_features() = {sf}")
         return sf
 
     @property
@@ -886,11 +897,15 @@ class GreeClimate(ClimateEntity):
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
-        return DeviceInfo(
+        info = DeviceInfo(
             identifiers={(DOMAIN, self._sub_mac_addr)},
             name=self._name,
             manufacturer="Gree",
         )
+        # Use the real hardware MAC for network connections
+        if self._base_mac_for_device_info:
+            info["connections"] = {(CONNECTION_NETWORK_MAC, self._base_mac_for_device_info)}
+        return info
 
     @property
     def outside_temperature(self):
