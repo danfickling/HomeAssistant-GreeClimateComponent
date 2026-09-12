@@ -64,14 +64,25 @@ class GreeEntity(Entity):
     @property
     def device_info(self) -> DeviceInfo:
         """Return device information."""
-        # Use base MAC for connections if available (ducted units have suffixed MACs)
-        connection_mac = getattr(self._device, '_base_mac_for_device_info', None) or self._device._mac_addr
-        return DeviceInfo(
+        info = DeviceInfo(
             identifiers={(DOMAIN, self._device._sub_mac_addr)},
             name=self._device._name,
             manufacturer="Gree",
-            connections={(CONNECTION_NETWORK_MAC, connection_mac)},
         )
+        # Ducted sub-units all share the physical hardware MAC. HA rejects an
+        # identical connection on more than one device of the same config
+        # entry ("Not adding entity with invalid device info") and discards
+        # the entity, so only the main unit advertises that MAC; zones are
+        # linked as logical children of the main unit (unit index 0).
+        base_mac = getattr(self._device, "_base_mac_for_device_info", None)
+        ducted_is_main = getattr(self._device, "_ducted_is_main", None)
+        if base_mac and ducted_is_main is False:
+            info["via_device"] = (DOMAIN, f"{base_mac}00")
+        else:
+            # Use base MAC for connections if available (ducted units have suffixed MACs)
+            connection_mac = base_mac or self._device._mac_addr
+            info["connections"] = {(CONNECTION_NETWORK_MAC, connection_mac)}
+        return info
 
     @property
     def available(self) -> bool:

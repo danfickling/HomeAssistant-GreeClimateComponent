@@ -48,6 +48,8 @@ When **Ducted Multizone** is enabled during setup, the integration creates multi
 
 All units share the same IP address and encryption key. The integration pre-fetches the encryption key once and reuses it across all zone units.
 
+In the device registry, Unit 0 is the physical device (it carries the hardware MAC address as a network connection) and Units 1–N are registered as its child devices. Only the main unit advertises that MAC: Home Assistant rejects the same MAC connection on more than one device of the same config entry, which would cause the zone entities to be discarded as `unavailable` with `restored: true`.
+
 ### Setup
 
 1. Add the integration via **Settings** > **Devices & Services** > **Add Integration** > **Gree Climate**.

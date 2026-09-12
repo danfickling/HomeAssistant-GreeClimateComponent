@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Custom Home Assistant integration for controlling Gree-compatible air conditioners over the local network via UDP (port 7000). Distributed through HACS. Domain: `gree`, version 3.3.2.
+Custom Home Assistant integration for controlling Gree-compatible air conditioners over the local network via UDP (port 7000). Distributed through HACS. Domain: `gree`, version 1.2.0.
 
 **Dependencies**: `pycryptodome` (AES encryption), `aiofiles` (async file I/O)
 

@@ -902,9 +902,17 @@ class GreeClimate(ClimateEntity):
             name=self._name,
             manufacturer="Gree",
         )
-        # Use the real hardware MAC for network connections
         if self._base_mac_for_device_info:
-            info["connections"] = {(CONNECTION_NETWORK_MAC, self._base_mac_for_device_info)}
+            if self._ducted_is_main is True:
+                # Only the main ducted unit may advertise the physical MAC.
+                # HA rejects an identical connection on more than one device
+                # of the same config entry ("Not adding entity with invalid
+                # device info"), which would discard every zone entity.
+                info["connections"] = {(CONNECTION_NETWORK_MAC, self._base_mac_for_device_info)}
+            elif self._ducted_is_main is False:
+                # Zones share the physical MAC but are logical children of
+                # the main unit (unit index 0 -> identifiers f"{base_mac}00").
+                info["via_device"] = (DOMAIN, f"{self._base_mac_for_device_info}00")
         return info
 
     @property
