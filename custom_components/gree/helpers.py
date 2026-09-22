@@ -1,6 +1,8 @@
 """Helper functions and classes for Gree integration."""
 
-from .const import TEMSEN_OFFSET
+from homeassistant.helpers import device_registry
+
+from .const import DOMAIN, TEMSEN_OFFSET
 
 
 class TempOffsetResolver:
@@ -129,3 +131,20 @@ def decode_temp_c(SetTem: int, TemRec: int) -> float:
     Returns the original temperature as a float.
     """
     return SetTem + (0.5 if TemRec else 0.0)
+
+
+
+def get_ducted_main_device_id(hass, base_mac):
+    """Return the device registry ID of the ducted main unit, if registered.
+
+    ``via_device_id`` needs the parent device's registry ID rather than an
+    identifiers tuple, so the registry is consulted directly. Returns None when
+    the main unit is not registered yet, so callers can omit the link instead of
+    failing to add the entity.
+    """
+    if hass is None or not base_mac:
+        return None
+    parent = device_registry.async_get(hass).async_get_device(
+        identifiers={(DOMAIN, f"{base_mac}00")}
+    )
+    return parent.id if parent is not None else None

@@ -55,7 +55,7 @@ from .const import (
     CONF_TEMP_SENSOR_OFFSET,
 )
 from .gree_protocol import Pad, FetchResult, GetDeviceKey, GetGCMCipher, EncryptGCM, GetDeviceKeyGCM
-from .helpers import TempOffsetResolver, gree_f_to_c, gree_c_to_f, encode_temp_c, decode_temp_c
+from .helpers import TempOffsetResolver, gree_f_to_c, gree_c_to_f, encode_temp_c, decode_temp_c, get_ducted_main_device_id
 
 REQUIREMENTS = ["pycryptodome"]
 
@@ -912,7 +912,14 @@ class GreeClimate(ClimateEntity):
             elif self._ducted_is_main is False:
                 # Zones share the physical MAC but are logical children of
                 # the main unit (unit index 0 -> identifiers f"{base_mac}00").
-                info["via_device"] = (DOMAIN, f"{self._base_mac_for_device_info}00")
+                # `via_device` is deprecated and makes HA raise while the
+                # entity is being added, which discards it. `via_device_id`
+                # takes the parent device's registry ID instead.
+                parent_id = get_ducted_main_device_id(
+                    self.hass, self._base_mac_for_device_info
+                )
+                if parent_id is not None:
+                    info["via_device_id"] = parent_id
         return info
 
     @property

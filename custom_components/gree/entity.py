@@ -13,6 +13,7 @@ from homeassistant.helpers.entity import DeviceInfo, Entity
 
 # Local imports
 from .const import DOMAIN
+from .helpers import get_ducted_main_device_id
 
 
 @dataclass
@@ -77,7 +78,14 @@ class GreeEntity(Entity):
         base_mac = getattr(self._device, "_base_mac_for_device_info", None)
         ducted_is_main = getattr(self._device, "_ducted_is_main", None)
         if base_mac and ducted_is_main is False:
-            info["via_device"] = (DOMAIN, f"{base_mac}00")
+            # `via_device` is deprecated and makes HA raise while the entity
+            # is being added, which discards it. `via_device_id` takes the
+            # parent device's registry ID instead.
+            hass = getattr(self._device, "hass", None)
+            if hass is not None:
+                parent_id = get_ducted_main_device_id(hass, base_mac)
+                if parent_id is not None:
+                    info["via_device_id"] = parent_id
         else:
             # Use base MAC for connections if available (ducted units have suffixed MACs)
             connection_mac = base_mac or self._device._mac_addr
